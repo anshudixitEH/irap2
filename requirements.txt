@@ -1,0 +1,7 @@
+streamlit
+pandas
+folium
+requests
+streamlit_folium
+cachetools
+matplotlib
