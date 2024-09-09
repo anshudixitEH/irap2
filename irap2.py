@@ -58,6 +58,10 @@ def get_color(ksi_count, ksi_min, ksi_max):
 # Streamlit app setup
 st.title("OpenStreetMap + Streamlit Dashboard")
 
+# Initialize session state for the map to prevent re-rendering
+if 'map' not in st.session_state:
+    st.session_state['map'] = None
+
 # Upload a CSV file with routes
 uploaded_file = st.file_uploader("Upload your CSV file with latitude/longitude data", type=["csv"])
 
@@ -83,19 +87,27 @@ if uploaded_file:
                 value=(ksi_min, ksi_max)
             )
 
-            # Road Numbers filter
+            # Road Numbers filter (deselected by default)
             unique_road_numbers = df['RoadNumber'].unique().tolist()
-            selected_road_numbers = st.multiselect(
-                "Select Road Numbers",
-                options=unique_road_numbers, default=unique_road_numbers
-            )
+            select_all_roads = st.checkbox("Select All Road Numbers", value=False)
+            if select_all_roads:
+                selected_road_numbers = unique_road_numbers
+            else:
+                selected_road_numbers = st.multiselect(
+                    "Select Road Numbers",
+                    options=unique_road_numbers, default=[]
+                )
 
-            # Speed Limits filter
+            # Speed Limits filter (deselected by default)
             unique_speed_limits = df['Speed_Limit'].unique().tolist()
-            selected_speed_limits = st.multiselect(
-                "Select Speed Limits",
-                options=unique_speed_limits, default=unique_speed_limits
-            )
+            select_all_speeds = st.checkbox("Select All Speed Limits", value=False)
+            if select_all_speeds:
+                selected_speed_limits = unique_speed_limits
+            else:
+                selected_speed_limits = st.multiselect(
+                    "Select Speed Limits",
+                    options=unique_speed_limits, default=[]
+                )
 
         # Filter Data based on User Selection
         filtered_df = df[
@@ -114,30 +126,37 @@ if uploaded_file:
         ksi_min = filtered_df['KSI_Count'].min()
         ksi_max = filtered_df['KSI_Count'].max()
 
-        # Create a map centered on the filtered points using Folium
+        # Create a map centered on the filtered points using Folium only if the data changes
         if not filtered_df.empty:
-            center_lat = filtered_df['latitude_S'].mean()
-            center_lon = filtered_df['longitude_S'].mean()
-            m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles='cartodbpositron')
+            if st.session_state['map'] is None or len(filtered_df) != len(st.session_state['map']["filtered_df"]):
+                center_lat = filtered_df['latitude_S'].mean()
+                center_lon = filtered_df['longitude_S'].mean()
+                m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles='cartodbpositron')
 
-            # Add Marker Cluster
-            marker_cluster = MarkerCluster().add_to(m)
+                # Add Marker Cluster
+                marker_cluster = MarkerCluster().add_to(m)
 
-            # Plot data on the Folium map using CircleMarkers with colors based on KSI
-            for _, row in filtered_df.iterrows():
-                color = get_color(row['KSI_Count'], ksi_min, ksi_max)
+                # Plot data on the Folium map using CircleMarkers with colors based on KSI
+                for _, row in filtered_df.iterrows():
+                    color = get_color(row['KSI_Count'], ksi_min, ksi_max)
 
-                folium.CircleMarker(
-                    location=[row['latitude_S'], row['longitude_S']],
-                    radius=5 + (row['KSI_Count'] - ksi_min) / (ksi_max - ksi_min) * 10,  # Adjust size based on KSI count
-                    color=color,
-                    fill=True,
-                    fill_opacity=0.7,
-                    popup=f"KSI: {row['KSI_Count']} | Speed: {row['Speed_Limit']}",
-                ).add_to(marker_cluster)
+                    folium.CircleMarker(
+                        location=[row['latitude_S'], row['longitude_S']],
+                        radius=5 + (row['KSI_Count'] - ksi_min) / (ksi_max - ksi_min) * 10,  # Adjust size based on KSI count
+                        color=color,
+                        fill=True,
+                        fill_opacity=0.7,
+                        popup=f"KSI: {row['KSI_Count']} | Speed: {row['Speed_Limit']}",
+                    ).add_to(marker_cluster)
 
-            # Display the map
-            st_folium(m, width=1000, height=600)
+                # Cache the map and data for the session
+                st.session_state['map'] = {
+                    "map": m,
+                    "filtered_df": filtered_df
+                }
+
+            # Display the map from session state
+            st_folium(st.session_state['map']["map"], width=1000, height=600)
 
         else:
             st.write("No data matches the selected filters.")
